@@ -335,4 +335,81 @@ plt.xlabel('PC 1')
 plt.ylabel('PC 2')
 plt.legend()
 plt.grid(True)
+
 plt.show()
+
+import pandas as pd
+
+def combine_all_sheets(file_path):
+    all_dfs = []
+    excel_file = pd.ExcelFile(file_path)
+    
+    for sheet in excel_file.sheet_names:
+        df = pd.read_excel(file_path, sheet_name=sheet, header=0)
+        df = df.loc[:, ~df.columns.str.contains('^Unnamed')]  # Remove unnamed cols
+        
+        if 'APL2' in sheet.upper():
+            df["label"] = 1
+        elif 'BL' in sheet.upper(): 
+        # Assume other sheets (BL?) as 0
+            df["label"] = 0
+        elif'APL1' in sheet.upper():
+            df["label"] = 2
+        elif 'AML' in sheet.upper():
+            df["label"] = 3
+        elif 'EM' in sheet.upper():
+            df["label"] = 4
+        else:
+            print("not matching sheet names")
+            
+        all_dfs.append(df)
+        print(f"Sheet '{sheet}': {df.shape[0]} rows, label={df['label'].iloc[0]}")
+    
+    combined_df = pd.concat(all_dfs, ignore_index=True)
+    numeric_cols = combined_df.select_dtypes(include=['number']).columns.drop('label', errors='ignore')
+    combined_df[numeric_cols] = combined_df[numeric_cols].astype('float64')
+    
+    print(f"\nFINAL: {combined_df.shape[0]} total rows")
+    print("Label counts:\n", combined_df['label'].value_counts())
+    return combined_df
+
+# Usage - replace with your file path
+combined_df = combine_all_sheets(r"D:\Final_master_sheet (2).xlsx")
+print(combined_df.tail())
+combined_df['label'].value_counts()
+volunteers_to_remove = ['V2', 'V5', 'V51', 'V54', 'V55', 'V57', 'V58']
+volunteer_col = combined_df.columns[0]
+df_1 = combined_df[~combined_df[volunteer_col].isin(volunteers_to_remove)]
+df_1.isna().sum()
+df_1.shape
+df_1.drop(['AUDIO', 'MEANING', 'COLOR'], axis=1, inplace=True)
+df_1
+
+shuffled_data = df_1.sample(frac=1, random_state=42).reset_index(drop=True)
+print(shuffled_data['label'].value_counts())
+shuffled_data.isnull().sum()
+import numpy as np
+
+numeric_cols = shuffled_data.select_dtypes(include=[np.number]).columns
+shuffled_data[numeric_cols] = shuffled_data[numeric_cols].fillna(shuffled_data[numeric_cols].mean())
+print(shuffled_data.isnull().sum())
+print(shuffled_data.info())
+shuffled_data.shape
+#hot encoding categorical columns n minmx(-1,1)
+import pandas as pd
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+from sklearn.preprocessing import MinMaxScaler
+
+categorical_cols = ['label']
+numerical_cols = shuffled_data.select_dtypes(include=['number']).columns.drop('label')
+
+# Categorical: One-hot (preferred for GANs) or LabelEncoder
+encoder = OneHotEncoder(sparse_output=False)
+df_encoded = pd.DataFrame(encoder.fit_transform(shuffled_data[categorical_cols]),
+                         columns=encoder.get_feature_names_out())
+
+scaler = MinMaxScaler(feature_range=(-1, 1))
+shuffled_data[numerical_cols] = scaler.fit_transform(shuffled_data[numerical_cols])
+X_processed = pd.concat([shuffled_data[numerical_cols], df_encoded], axis=1)
+X_processed.shape
+X_processed.head()
