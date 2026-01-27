@@ -1,0 +1,58 @@
+import mne
+import os
+import matplotlib.pyplot as plt
+import numpy as np
+import mne
+data_dir = r"F:\EEGFILES"
+vhdr_file = data_dir + r"\v13_session1_BL_8.11.2024.vhdr"
+raw = mne.io.read_raw_brainvision(
+    vhdr_file,
+    preload=True
+)
+print(raw)
+raw.plot()
+events, event_id = mne.events_from_annotations(raw)
+print("Event IDs:", event_id)
+print("Number of events:", len(events))
+raw.annotations
+##selecting few channels to plot
+print(raw.ch_names)
+channels = ['P7', 'P8', 'O1', 'O2']
+
+raw_pick = raw.copy().pick_channels(channels)
+
+raw_pick.plot(
+    scalings='auto'
+)
+psd = raw_pick.compute_psd(
+    method='welch',
+    fmin=1,
+    fmax=40,
+    n_fft=2048
+)
+psd.plot()
+psds, freqs = psd.get_data(return_freqs=True)
+# psds shape: (n_channels, n_freqs)
+print("PSD shape:", psds.shape)
+print("Frequencies shape:", freqs.shape)
+#######eeg preprocessing##
+print(raw.info["bads"])
+raw.crop(tmax=60)
+n_time_samps = raw.n_times
+time_secs = raw.times
+ch_names = raw.ch_names
+n_chan = len(ch_names)  # note: there is no raw.n_channels attribute
+print(
+    f"the (cropped) sample data object has {n_time_samps} time samples and "
+    f"{n_chan} channels."
+)
+print(f"The last time sample is at {time_secs[-1]} seconds.")
+print("The first few channel names are {}.".format(", ".join(ch_names[:3])))
+print()  # insert a blank line in the output
+
+# some examples of raw.info:
+print("bad channels:", raw.info["bads"])  # chs marked "bad" during acquisition
+print(raw.info["sfreq"], "Hz")  # sampling frequency
+print(raw.info["description"], "\n")  # miscellaneous acquisition info
+
+print(raw.info)
