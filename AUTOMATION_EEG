@@ -1,0 +1,175 @@
+import os
+import glob
+import numpy as np
+import pandas as pd
+import mne
+from mne.preprocessing import ICA
+
+
+sfreq = 500
+channels_of_interest = ["O1", "O2", "P7", "P8"]
+
+bands = {
+    "Delta": (0.5, 4),
+    "Theta": (4, 8),
+    "Alpha": (8, 13),
+    "Beta":  (13, 30)
+}
+
+epoch_len = 10
+overlap = 0.5
+
+main_folder = r"F:\EEG_MAINFOLD"
+output_folder = r"F:\EEG_BANDPOWER_RESULTS"
+os.makedirs(output_folder, exist_ok=True)
+
+
+session_folders = [f.path for f in os.scandir(main_folder) if f.is_dir()]
+
+for session_path in session_folders:
+
+    session_name = os.path.basename(session_path)
+    excel_files = glob.glob(os.path.join(session_path, "*.xlsx"))
+
+    for file_path in excel_files:
+
+        print(f"\nProcessing: {file_path}")
+
+        filename = os.path.basename(file_path).replace(".xlsx", "")
+        subject_id = filename.split("_")[0]
+
+    
+        data = pd.read_excel(file_path)
+        eeg_data = data.values.T
+        channel_names = data.columns.tolist()
+
+        info = mne.create_info(channel_names, sfreq, ch_types='eeg')
+
+        if np.max(np.abs(eeg_data)) > 1:
+            raw = mne.io.RawArray(eeg_data, info)
+        else:
+            raw = mne.io.RawArray(eeg_data * 1e6, info
+
+        raw_filt = raw.copy()
+
+        raw_filt.notch_filter(
+            freqs=[50],
+            method="iir",
+            phase="zero"
+        )
+
+        raw_filt.filter(
+            l_freq=0.1,
+            h_freq=35.0,
+            method="iir",
+            phase="zero",
+            iir_params=dict(order=4, ftype="butter")
+        )
+
+        raw_filt.set_eeg_reference("average", projection=False)
+
+        # -------------------------------------------------
+        # ICA
+        # -------------------------------------------------
+
+        raw_ica = raw_filt.copy()
+        raw_ica.filter(l_freq=1.0, h_freq=None)
+
+        ica = ICA(
+            n_components=15,
+            method="infomax",
+            random_state=42,
+            max_iter=1000
+        )
+
+        ica.fit(raw_ica)
+
+        muscle_idx_auto, _ = ica.find_bads_muscle(raw_filt)
+
+        if "Fp2" in raw_filt.ch_names:
+            eog_inds, _ = ica.find_bads_eog(
+                raw_filt,
+                ch_name="Fp2",
+                threshold=3.0
+            )
+        else:
+            eog_inds = []
+
+        raw_clean = raw_filt.copy()
+        ica.apply(raw_clean, exclude=muscle_idx_auto + eog_inds)
+
+        # -------------------------------------------------
+        # EPOCHING
+        # -------------------------------------------------
+
+        step = epoch_len * (1 - overlap)
+
+        epochs = mne.make_fixed_length_epochs(
+            raw_clean,
+            duration=epoch_len,
+            overlap=step,
+            preload=True,
+            reject_by_annotation=False
+        )
+
+        n_epochs = len(epochs)
+        print(f"Number of epochs: {n_epochs}")
+
+        # -------------------------------------------------
+        # PSD
+        # -------------------------------------------------
+
+        psds = epochs.compute_psd(
+            method="welch",
+            fmin=0.5,
+            fmax=35,
+            n_fft=1000,
+            picks=channels_of_interest,
+            n_overlap=500,
+            window="hann",
+            average="mean",
+            verbose=False
+        )
+
+        psd_data = psds.get_data()
+        freqs = psds.freqs
+
+        # -------------------------------------------------
+        # BAND POWER
+        # -------------------------------------------------
+
+        rows = []
+
+        for ep in range(n_epochs):
+
+            row = {"epoch": ep}
+
+            for ch_idx, ch_name in enumerate(channels_of_interest):
+
+                for band_name, (lo, hi) in bands.items():
+
+                    freq_mask = (freqs >= lo) & (freqs <= hi)
+
+                    band_val = np.trapz(
+                        psd_data[ep, ch_idx, freq_mask],
+                        freqs[freq_mask]
+                    )
+
+                    row[f"{ch_name}_{band_name}"] = band_val
+
+            rows.append(row)
+
+        df_bandpower = pd.DataFrame(rows)
+
+        # -------------------------------------------------
+        # SAVE FILE
+        # -------------------------------------------------
+
+        save_name = f"{subject_id}_band_power_{session_name}.csv"
+        save_path = os.path.join(output_folder, save_name)
+
+        df_bandpower.to_csv(save_path, index=False)
+
+        print(f"Saved: {save_name}")
+
+print("\nALL VOLUNTEERS & SESSIONS COMPLETED ✅")
