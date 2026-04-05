@@ -83,10 +83,4 @@ The broader objective is to unify these pipelines into a coherent multimodal sys
 
 This repository is intended strictly for research and development purposes. It does not constitute a clinical or diagnostic system and should not be used for medical decision-making.
 
----
 
-If you want next-level polish, I can:
-
-* add a **dark-themed banner (very premium GitHub look)**
-* include **demo GIF placeholders**
-* or tailor this README specifically for your **PhD / research portfolio submissions**
